@@ -16,6 +16,7 @@ func main() {}
 func initClient(){
 	joinCallResult = make(map[int]chan string)
 	tgCallResponse = make(map[int]chan string)
+	//fmt.Println(os.Environ())
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
 	go func() {

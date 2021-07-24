@@ -7,11 +7,9 @@ import (
 	"github.com/pion/mediadevices"
 	"github.com/pion/mediadevices/pkg/codec/opus"
 	_ "github.com/pion/mediadevices/pkg/driver/microphone"
-	"github.com/pion/sdp/v3"
 	"github.com/pion/webrtc/v3"
 	"strconv"
 	"strings"
-	"time"
 )
 
 //export joinVoiceCall
@@ -36,7 +34,13 @@ func joinVoiceCall(chatId int, inviteHash string) bool{
 			if err != nil{
 				panic(err)
 			}
+
 			peerConnection.OnICEConnectionStateChange(func(connectionState webrtc.ICEConnectionState) {
+				if connectionState == webrtc.ICEConnectionStateConnected{
+					iceConnected <- true
+				}else if connectionState == webrtc.ICEConnectionStateFailed{
+					iceConnected <- false
+				}
 				fmt.Printf("Connection State has changed %s \n", connectionState.String())
 			})
 			audioSource, err := NewAudioFile("audio.raw")
@@ -53,18 +57,27 @@ func joinVoiceCall(chatId int, inviteHash string) bool{
 					Direction: webrtc.RTPTransceiverDirectionSendonly,
 				},
 			)
-			peerConnection.OnICEConnectionStateChange(func(connectionState webrtc.ICEConnectionState) {
-				if connectionState == webrtc.ICEConnectionStateConnected{
-					iceConnected <- true
-				}else if connectionState == webrtc.ICEConnectionStateFailed{
-					iceConnected <- false
-				}
+			/*s, err := mediadevices.GetUserMedia(mediadevices.MediaStreamConstraints{
+				Audio: func(c *mediadevices.MediaTrackConstraints) {},
+				Codec: codecSelector,
 			})
-			offer, err := peerConnection.CreateOffer(nil)
-			if err != nil {
+			if err != nil{
 				panic(err)
 			}
+			for _, audioTrack := range s.GetTracks(){
+				audioTrack.OnEnded(func(err error) {
+					fmt.Printf("Track (ID: %s) ended with error: %v\n",
+						audioTrack.ID(), err)
+				})
+				_, err = peerConnection.AddTransceiverFromTrack(audioTrack,
+					webrtc.RTPTransceiverInit{
+						Direction: webrtc.RTPTransceiverDirectionSendonly,
+					},
+				)
+			}*/
+			offer, err := peerConnection.CreateOffer(nil)
 			err = peerConnection.SetLocalDescription(offer)
+
 			sdpConn, err := offer.Unmarshal()
 			//goland:noinspection GoNilness
 			source, err := strconv.Atoi(strings.Split(sdpConn.MediaDescriptions[0].Attributes[8].Value, " ")[0])
@@ -78,111 +91,50 @@ func joinVoiceCall(chatId int, inviteHash string) bool{
 				Setup: "active",
 				Pwd: sdpConn.MediaDescriptions[0].Attributes[3].Value,
 				Ufrag: sdpConn.MediaDescriptions[0].Attributes[2].Value,
-				Source: source,
+				Source: uint32(source),
 				InviteHash: inviteHash,
 			})
 			if err != nil {
 				panic(err)
 			}
 			joinCallResult[chatId]<-string(payload)
-			var joinResponse Conference
+			var joinResponse Transport
 			err = json.Unmarshal([]byte(<-tgCallResponse[chatId]), &joinResponse)
 			if err != nil {
 				panic(err)
 			}
-			sessionId := uint64(time.Now().Unix())
-			/*
-			* This code part is based on this
-			* https://github.com/evgeny-nadymov/telegram-react/blob/master/src/Calls/SdpBuilder.js
-			*/
-			remoteDesc := sdp.SessionDescription{
-				SessionName: "-",
-				TimeDescriptions: []sdp.TimeDescription{
-					{
-						Timing: sdp.Timing{
-							StartTime: 0,
-							StopTime:  0,
-						},
-						RepeatTimes: nil,
-					},
-				},
-				Origin: sdp.Origin{
-					Username: "-",
-					SessionID: sessionId,
-					SessionVersion: 2,
-					NetworkType: "IN",
-					AddressType: "IP4",
-					UnicastAddress: "0.0.0.0",
-				},
-			}
-			intPort, err := strconv.Atoi(joinResponse.Transport.Candidates[0].Port)
-			if err != nil {
-				panic(err)
-			}
-			mediaDescription := sdp.MediaDescription{
-				MediaName: sdp.MediaName{
-					Media: "audio",
-					Port: sdp.RangedPort{
-						Value: intPort,
-					},
-					Protos: []string{
-						"RTP",
-						"SAVPF",
-					},
-				},
-			}
-			audioLevelUri := sdp.AudioLevelURI
-			mediaDescription.WithExtMap(sdp.ExtMap{
-				Value:     sdp.DefExtMapValueABSSendTime,
-				Direction: sdp.DirectionSendOnly,
-				ExtAttr:   &audioLevelUri,
-			})
-			mediaDescription.WithMediaSource(uint32(source), fmt.Sprintf("%s%d","stream",uint32(source)), fmt.Sprintf("%s%d","audio",uint32(source)), fmt.Sprintf("%s%d","audio",uint32(source)))
-			mediaDescription.WithCodec(111, "opus", 48000, 2, "minptime=10; useinbandfec=1; usedtx=1")
-			mediaDescription.WithCodec(126, "telephone-event", 8000, 0, "")
-			mediaDescription.WithICECredentials(joinResponse.Transport.Ufrag, joinResponse.Transport.Pwd)
-			mediaDescription.WithFingerprint(joinResponse.Transport.Fingerprints[0].Hash, joinResponse.Transport.Fingerprints[0].Fingerprint)
-			for cIndex := range joinResponse.Transport.Candidates {
-				candidate := joinResponse.Transport.Candidates[cIndex]
-				mediaDescription.WithValueAttribute("candidate", fmt.Sprintf(
-					"%s %s %s %s %s %s typ %s generation %s",
-					candidate.Foundation,
-					candidate.Component,
-					candidate.Protocol,
-					candidate.Priority,
-					candidate.Ip,
-					candidate.Port,
-					candidate.Type,
-					candidate.Generation,
-				))
-			}
-			remoteDesc.WithMedia(&mediaDescription)
-			remoteDesc.WithValueAttribute(sdp.AttrKeyConnectionSetup, sdp.ConnectionRolePassive.String())
-			remoteDesc.WithValueAttribute(sdp.AttrKeyMID, "0")
-			remoteDesc.WithValueAttribute(sdp.AttrKeyGroup, "BUNDLE 0")
-			remoteDesc.WithPropertyAttribute(sdp.AttrKeyICELite)
-			remoteDesc.WithValueAttribute(sdp.AttrKeySSRCGroup, fmt.Sprintf("FID %d", uint32(source)))
-			remoteSDP, err := remoteDesc.Marshal()
-			fmt.Println(string(remoteSDP))
+
+			sdpString := fromConference(Conference{
+				SessionId: newSessionID(),
+				Transport: joinResponse,
+				Ssrcs: []SSRC{{Ssrc: uint32(source), IsMain: true}},
+			}, true)
 			err = peerConnection.SetRemoteDescription(webrtc.SessionDescription{
 				Type: webrtc.SDPTypeAnswer,
-				SDP: string(remoteSDP),
+				SDP: sdpString,
 			})
+			/*err = peerConnection.SetRemoteDescription(MustReadStdin())
 			if err != nil {
 				panic(err)
-			}
+			}*/
+			/*answer, err := peerConnection.CreateAnswer(nil)
+			err = peerConnection.SetLocalDescription(answer)
+			fmt.Println(Encode(*peerConnection.LocalDescription()))*/
 			gatherComplete := webrtc.GatheringCompletePromise(peerConnection)
 			fmt.Println("TRYING")
 			<-gatherComplete
 			fmt.Println("FINISHED")
+			//getRemoteDescFromJS(joinResponse, uint32(source))
 			<-iceConnected
 			fmt.Println("CONNECTED")
+			fmt.Println(peerConnection.RemoteDescription())
 		}()
 		return true
 	}else{
 		return false
 	}
 }
+
 
 //export sendResponseCall
 func sendResponseCall(chatId int, result string) bool{

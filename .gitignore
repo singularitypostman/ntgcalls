@@ -1,1 +1,11 @@
 .idea
+test.session
+test.session-journal
+test.txt
+test2.txt
+test3.txt
+test4.txt
+test5.txt
+bdescription.txt
+dist/ntgcalls.h
+dist/ntgcalls.so

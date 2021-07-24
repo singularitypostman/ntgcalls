@@ -1,3 +1,4 @@
+import base64
 import json
 import time
 from ctypes import *
@@ -20,12 +21,12 @@ def c_go_string(p: str):
 lib = cdll.LoadLibrary("./dist/ntgcalls.so")
 app = Client(
     'test',
-    api_id=123456789,
-    api_hash='ADBCDEF'
+    api_id=2799555,
+    api_hash='47d66bbf0939d0ddf32caf8bad590ed7'
 )
 app.start()
 
-chat_id = -100123456789
+chat_id = -1001393716813
 lib.joinVoiceCall.argtypes = [c_int64, GoString]
 lib.joinVoiceCall.restype = c_bool
 lib.waitRequestJoin.argtypes = [c_int64]
@@ -69,13 +70,16 @@ if res:
         transport = json.loads(result.updates[0].call.params.data)[
             'transport'
         ]
+        """file_path = 'bdescription.txt'
+        with open(file_path, 'r') as f:
+            result = f.read()
+        transport = json.loads(base64.b64decode(result))
+        print(transport)"""
         lib.sendResponseCall(chat_id, c_go_string(json.dumps({
-            'transport': {
-                'ufrag': transport['ufrag'],
-                'pwd': transport['pwd'],
-                'fingerprints': transport['fingerprints'],
-                'candidates': transport['candidates'],
-            },
+            'ufrag': transport['ufrag'],
+            'pwd': transport['pwd'],
+            'fingerprints': transport['fingerprints'],
+            'candidates': transport['candidates'],
         })))
     asyncio.get_event_loop().run_until_complete(wait_response())
     time.sleep(1000)  # This allow to keep alive the Go service
