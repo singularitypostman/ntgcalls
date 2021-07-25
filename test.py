@@ -21,8 +21,8 @@ def c_go_string(p: str):
 lib = cdll.LoadLibrary("./dist/ntgcalls.so")
 app = Client(
     'test',
-    api_id=2799555,
-    api_hash='47d66bbf0939d0ddf32caf8bad590ed7'
+    api_id=YOUR_API_ID,
+    api_hash='YOUR_API_HASH'
 )
 app.start()
 
